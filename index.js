@@ -4,7 +4,7 @@ dns.setServers(["8.8.8.8", "8.8.4.4"]);
 const express = require("express");
 const dotenv = require("dotenv");
 const cors = require("cors");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 dotenv.config();
 
 const uri = process.env.MONGODB_URI;
@@ -43,6 +43,14 @@ async function run() {
 
       res.json(result);
     });
+
+    app.get("/tutors/:id" , async (req,res) => {
+      const {id} = req.params
+      const result = await tutorCollection.findOne({_id: new ObjectId(id)})
+
+      res.json(result)
+
+    })
 
     await client.db("admin").command({ ping: 1 });
     console.log(
