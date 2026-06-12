@@ -30,6 +30,7 @@ async function run() {
 
     const db = client.db("mediqueue");
     const tutorCollection = db.collection("tutors");
+    const bookingCollection = db.collection("bookings");
 
     app.get('/tutor', async (req,res) =>{
       const result = await tutorCollection.find().toArray()
@@ -51,6 +52,78 @@ async function run() {
       res.json(result)
 
     })
+
+    app.post("/bookings", async (req, res) => {
+      const bookingData = req.body;
+
+      const result = await bookingCollection.insertOne(
+        bookingData
+      );
+
+      res.send(result);
+    });
+
+    app.post("/book-session", async (req, res) => {
+
+      const bookingData = req.body;
+
+      const tutor = await tutorCollection.findOne({
+        _id: new ObjectId(bookingData.tutorId),
+      });
+
+      if (!tutor) {
+        return res.status(404).send({
+          message: "Tutor not found",
+        });
+      }
+
+      if (tutor.totalSlot <= 0) {
+        return res.status(400).send({
+          message: "No available slots left",
+        });
+      }
+
+      await bookingCollection.insertOne(
+        bookingData
+      );
+
+      await tutorCollection.updateOne(
+        {
+          _id: new ObjectId(
+            bookingData.tutorId
+          ),
+        },
+        {
+          $inc: {
+            totalSlot: -1,
+          },
+        }
+      );
+
+      res.send({
+        success: true,
+        message: "Booking successful",
+      });
+    });
+
+
+
+    app.patch("/tutors/:id", async(req,res)=>{
+    
+    const {id} = req.params
+
+    const result = await tutorCollection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $inc: {
+          totalSlot: -1
+        }
+      }
+    );
+
+    res.send(result);
+});
+
 
     await client.db("admin").command({ ping: 1 });
     console.log(
