@@ -8,11 +8,8 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 dotenv.config();
 
 const uri = process.env.MONGODB_URI;
-
 const app = express();
-
 const PORT = process.env.PORT;
-
 app.use(cors());
 app.use(express.json());
 
@@ -32,39 +29,35 @@ async function run() {
     const tutorCollection = db.collection("tutors");
     const bookingCollection = db.collection("bookings");
 
-    app.get('/tutor', async (req,res) =>{
-      const result = await tutorCollection.find().toArray()
-      res.json(result)
-    })
+    app.get("/tutor", async (req, res) => {
+      const result = await tutorCollection.find().toArray();
+      res.json(result);
+    });
 
     app.post("/tutor", async (req, res) => {
       const tutorData = req.body;
       console.log(tutorData);
-      const result = tutorCollection.insertOne(tutorData);
+      const result = await tutorCollection.insertOne(tutorData);
 
       res.json(result);
     });
 
-    app.get("/tutors/:id" , async (req,res) => {
-      const {id} = req.params
-      const result = await tutorCollection.findOne({_id: new ObjectId(id)})
+    app.get("/tutors/:id", async (req, res) => {
+      const { id } = req.params;
+      const result = await tutorCollection.findOne({ _id: new ObjectId(id) });
 
-      res.json(result)
-
-    })
+      res.json(result);
+    });
 
     app.post("/bookings", async (req, res) => {
       const bookingData = req.body;
 
-      const result = await bookingCollection.insertOne(
-        bookingData
-      );
+      const result = await bookingCollection.insertOne(bookingData);
 
       res.send(result);
     });
 
     app.post("/book-session", async (req, res) => {
-
       const bookingData = req.body;
 
       const tutor = await tutorCollection.findOne({
@@ -83,21 +76,17 @@ async function run() {
         });
       }
 
-      await bookingCollection.insertOne(
-        bookingData
-      );
+      await bookingCollection.insertOne(bookingData);
 
       await tutorCollection.updateOne(
         {
-          _id: new ObjectId(
-            bookingData.tutorId
-          ),
+          _id: new ObjectId(bookingData.tutorId),
         },
         {
           $inc: {
             totalSlot: -1,
           },
-        }
+        },
       );
 
       res.send({
@@ -106,24 +95,50 @@ async function run() {
       });
     });
 
+    app.get("/bookings", async (req, res) => {
+      const email = req.query.email;
+      const result = await bookingCollection
+        .find({ studentEmail: email })
+        .toArray();
+      res.send(result);
+    });
 
+   app.patch("/bookings/:id", async (req, res) => {
+    try {
+        const { id } = req.params;
 
-    app.patch("/tutors/:id", async(req,res)=>{
-    
-    const {id} = req.params
+        const booking = await bookingCollection.findOne({
+            _id: new ObjectId(id),
+        });
 
-    const result = await tutorCollection.updateOne(
-      { _id: new ObjectId(id) },
-      {
-        $inc: {
-          totalSlot: -1
+        if (booking.bookStatus === "cancelled") {
+            return res.status(400).send({ message: "Already cancelled" });
         }
-      }
+
+        const result = await bookingCollection.updateOne(
+            { _id: new ObjectId(id) },
+            {
+                $set: { bookStatus: "cancelled" },
+            }
+        );
+        await tutorCollection.updateOne(
+        { _id: new ObjectId(booking.tutorId) },
+        {
+            $inc: {
+                totalSlot: 1,
+            },
+        }
     );
+        res.send({
+            success: true,
+            message: "Booking cancelled",
+            result,
+        });
 
-    res.send(result);
+    } catch (error) {
+        console.error(error);
+    }
 });
-
 
     await client.db("admin").command({ ping: 1 });
     console.log(
