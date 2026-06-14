@@ -108,10 +108,29 @@ async function run() {
 
       const result = await tutorCollection.insertOne({
         ...tutorData,
-        email: tutorData.email, 
+        email: tutorData.email,
       });
 
       res.json(result);
+    });
+
+    app.delete("/tutors/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+
+        const result = await tutorCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+
+        res.send({
+          success: true,
+          message: "Tutor deleted successfully",
+          result,
+        });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Delete failed" });
+      }
     });
 
     app.patch("/bookings/:id", async (req, res) => {
