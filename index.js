@@ -34,19 +34,27 @@ async function run() {
       res.json(result);
     });
 
-    app.post("/tutor", async (req, res) => {
-      const tutorData = req.body;
-      console.log(tutorData);
-      const result = await tutorCollection.insertOne(tutorData);
-
-      res.json(result);
-    });
-
     app.get("/tutors/:id", async (req, res) => {
       const { id } = req.params;
       const result = await tutorCollection.findOne({ _id: new ObjectId(id) });
 
       res.json(result);
+    });
+
+    app.get("/bookings", async (req, res) => {
+      const email = req.query.email;
+      const result = await bookingCollection
+        .find({ studentEmail: email })
+        .toArray();
+      res.send(result);
+    });
+
+    app.get("/my-tutors", async (req, res) => {
+      const email = req.query.email;
+
+      const result = await tutorCollection.find({ email }).toArray();
+
+      res.send(result);
     });
 
     app.post("/bookings", async (req, res) => {
@@ -95,50 +103,65 @@ async function run() {
       });
     });
 
-    app.get("/bookings", async (req, res) => {
-      const email = req.query.email;
-      const result = await bookingCollection
-        .find({ studentEmail: email })
-        .toArray();
-      res.send(result);
+    app.post("/tutor", async (req, res) => {
+      const tutorData = req.body;
+
+      const result = await tutorCollection.insertOne({
+        ...tutorData,
+        email: tutorData.email, 
+      });
+
+      res.json(result);
     });
 
-   app.patch("/bookings/:id", async (req, res) => {
-    try {
+    app.patch("/bookings/:id", async (req, res) => {
+      try {
         const { id } = req.params;
 
         const booking = await bookingCollection.findOne({
-            _id: new ObjectId(id),
+          _id: new ObjectId(id),
         });
 
         if (booking.bookStatus === "cancelled") {
-            return res.status(400).send({ message: "Already cancelled" });
+          return res.status(400).send({ message: "Already cancelled" });
         }
 
         const result = await bookingCollection.updateOne(
-            { _id: new ObjectId(id) },
-            {
-                $set: { bookStatus: "cancelled" },
-            }
+          { _id: new ObjectId(id) },
+          {
+            $set: { bookStatus: "cancelled" },
+          },
         );
         await tutorCollection.updateOne(
-        { _id: new ObjectId(booking.tutorId) },
-        {
+          { _id: new ObjectId(booking.tutorId) },
+          {
             $inc: {
-                totalSlot: 1,
+              totalSlot: 1,
             },
-        }
-    );
+          },
+        );
         res.send({
-            success: true,
-            message: "Booking cancelled",
-            result,
+          success: true,
+          message: "Booking cancelled",
+          result,
         });
-
-    } catch (error) {
+      } catch (error) {
         console.error(error);
-    }
-});
+      }
+    });
+
+    app.patch("/tutors/:id", async (req, res) => {
+      const { id } = req.params;
+
+      const result = await tutorCollection.updateOne(
+        { _id: new ObjectId(id) },
+        {
+          $set: req.body,
+        },
+      );
+
+      res.send(result);
+    });
 
     await client.db("admin").command({ ping: 1 });
     console.log(
