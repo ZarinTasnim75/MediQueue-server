@@ -28,9 +28,14 @@ async function run() {
     const db = client.db("mediqueue");
     const tutorCollection = db.collection("tutors");
     const bookingCollection = db.collection("bookings");
-
+    
     app.get("/tutor", async (req, res) => {
-      const result = await tutorCollection.find().toArray();
+      const limit = parseInt(req.query.limit);
+
+      const result = limit
+        ? await tutorCollection.find().limit(limit).toArray()
+        : await tutorCollection.find().toArray();
+
       res.json(result);
     });
 
