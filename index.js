@@ -12,12 +12,18 @@ dotenv.config();
 const uri = process.env.MONGODB_URI;
 const app = express();
 const PORT = process.env.PORT || 5000;
-const BETTER_AUTH_SECRET = process.env.BETTER_AUTH_SECRET ;
+const BETTER_AUTH_SECRET = process.env.BETTER_AUTH_SECRET || process.env.JWT_SECRET || "fallback-secret";
+const JWT_EXPIRES_IN = "7d";
 
-app.use(cors({
-  origin: process.env.BETTER_AUTH_URL || "http://localhost:3000",
-  credentials: true,
-}));
+app.use(
+  cors({
+    origin: process.env.FRONTEND_URL,
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  }),
+);
+
 app.use(express.json());
 
 const client = new MongoClient(uri, {
@@ -52,7 +58,9 @@ const authenticateJWT = (req, res, next) => {
   }
 
   if (!authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Invalid token format. Use Bearer token." });
+    return res
+      .status(401)
+      .json({ error: "Invalid token format. Use Bearer token." });
   }
 
   const token = authHeader.split(" ")[1];
@@ -79,7 +87,7 @@ async function run() {
     const tutorCollection = db.collection("tutors");
     const bookingCollection = db.collection("bookings");
     const userCollection = db.collection("users");
-    
+
     app.post("/auth/get-token", async (req, res) => {
       try {
         const { email } = req.body;
@@ -89,7 +97,7 @@ async function run() {
         }
 
         const user = await userCollection.findOne({ email });
-        
+
         if (!user) {
           return res.status(404).json({ error: "User not found." });
         }
@@ -126,7 +134,9 @@ async function run() {
 
         const existingUser = await userCollection.findOne({ email });
         if (existingUser) {
-          return res.status(400).json({ error: "User already exists with this email." });
+          return res
+            .status(400)
+            .json({ error: "User already exists with this email." });
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -163,7 +173,9 @@ async function run() {
         });
       } catch (error) {
         console.error("Registration error:", error);
-        res.status(500).json({ error: "Registration failed. Please try again." });
+        res
+          .status(500)
+          .json({ error: "Registration failed. Please try again." });
       }
     });
 
@@ -172,7 +184,9 @@ async function run() {
         const { email, password } = req.body;
 
         if (!email || !password) {
-          return res.status(400).json({ error: "Email and password are required." });
+          return res
+            .status(400)
+            .json({ error: "Email and password are required." });
         }
 
         const user = await userCollection.findOne({ email });
@@ -244,7 +258,7 @@ async function run() {
                 name: name || user.name,
                 updatedAt: new Date(),
               },
-            }
+            },
           );
           user = await userCollection.findOne({ _id: user._id });
         }
@@ -273,54 +287,46 @@ async function run() {
         res.status(500).json({ error: "Social login failed." });
       }
     });
-    
-app.get("/tutor", async (req, res) => {
-  try {
-    const { 
-      limit, 
-      search, 
-      startDate, 
-      endDate 
-    } = req.query;
-    let query = {};
-    if (search && search.trim() !== "") {
-      query.tutorName = { 
-        $regex: search.trim(), 
-        $options: "i"
-      };
-    }
-    if (startDate || endDate) {
-      query.createdAt = {};
-      
-      if (startDate) {
-        query.createdAt.$gte = new Date(startDate);
+
+    app.get("/tutor", async (req, res) => {
+      try {
+        const { limit, search, startDate, endDate } = req.query;
+        let query = {};
+        if (search && search.trim() !== "") {
+          query.tutorName = {
+            $regex: search.trim(),
+            $options: "i",
+          };
+        }
+        if (startDate || endDate) {
+          query.createdAt = {};
+
+          if (startDate) {
+            query.createdAt.$gte = new Date(startDate);
+          }
+
+          if (endDate) {
+            const endDateTime = new Date(endDate);
+            endDateTime.setHours(23, 59, 59, 999);
+            query.createdAt.$lte = endDateTime;
+          }
+        }
+
+        let result;
+        if (limit) {
+          const limitNum = parseInt(limit);
+          result = await tutorCollection
+            .find(query)
+            .limit(Math.min(limitNum, 100))
+            .toArray();
+        } else {
+          result = await tutorCollection.find(query).toArray();
+        }
+        res.json(result);
+      } catch (error) {
+        res.status(500).json({ error: "Failed to fetch tutors." });
       }
-      
-      if (endDate) {
-        const endDateTime = new Date(endDate);
-        endDateTime.setHours(23, 59, 59, 999);
-        query.createdAt.$lte = endDateTime;
-      }
-    }
-    
-    let result;
-    if (limit) {
-      const limitNum = parseInt(limit);
-      result = await tutorCollection
-        .find(query)
-        .limit(Math.min(limitNum, 100))
-        .toArray();
-    } else {
-      result = await tutorCollection
-        .find(query)
-        .toArray();
-    }
-    res.json(result);
-    
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch tutors." });
-  }
-});
+    });
     app.get("/tutors/:id", authenticateJWT, async (req, res) => {
       try {
         const { id } = req.params;
@@ -338,30 +344,37 @@ app.get("/tutor", async (req, res) => {
       }
     });
 
-app.get("/bookings", authenticateJWT, async (req, res) => {
-    try {
+    app.get("/bookings", authenticateJWT, async (req, res) => {
+      try {
         const email = req.query.email || req.user.email;
-        
+
         const result = await bookingCollection
-            .find({ studentEmail: email })
-            .sort({ createdAt: -1 })
-            .toArray();
+          .find({ studentEmail: email })
+          .sort({ createdAt: -1 })
+          .toArray();
         res.json(result);
-    } catch (error) {
+      } catch (error) {
         res.json([]);
-    }
-});
-app.get("/my-tutors", authenticateJWT, async (req, res) => {
-  try {
-    const email = req.user.email;
-    const result = await tutorCollection.find({ 
-      email: { $regex: new RegExp(`^${email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } 
-    }).toArray();
-    res.json(result);
-  } catch (error) {
-    res.json([]);
-  }
-});
+      }
+    });
+    app.get("/my-tutors", authenticateJWT, async (req, res) => {
+      try {
+        const email = req.user.email;
+        const result = await tutorCollection
+          .find({
+            email: {
+              $regex: new RegExp(
+                `^${email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+                "i",
+              ),
+            },
+          })
+          .toArray();
+        res.json(result);
+      } catch (error) {
+        res.json([]);
+      }
+    });
     app.post("/bookings", authenticateJWT, async (req, res) => {
       try {
         const bookingData = {
@@ -378,60 +391,59 @@ app.get("/my-tutors", authenticateJWT, async (req, res) => {
       }
     });
 
-app.post("/book-session", authenticateJWT, async (req, res) => {
-  try {
-    if (!req.body.tutorId) {
-      return res.status(400).json({ message: "Missing tutorId" });
-    }
-    
-    if (!req.body.studentEmail) {
-      req.body.studentEmail = req.user.email;
-    }
-    
-    if (!req.body.studentName) {
-      req.body.studentName = req.user.name;
-    }
+    app.post("/book-session", authenticateJWT, async (req, res) => {
+      try {
+        if (!req.body.tutorId) {
+          return res.status(400).json({ message: "Missing tutorId" });
+        }
 
-    const bookingData = {
-      tutorId: req.body.tutorId,
-      tutorName: req.body.tutorName || "Unknown Tutor",
-      studentEmail: req.body.studentEmail || req.user.email,
-      studentName: req.body.studentName || req.user.name,
-      studentId: req.user.id,
-      phone: req.body.phone || "",
-      bookStatus: "confirmed",
-      createdAt: new Date(),
-    };
+        if (!req.body.studentEmail) {
+          req.body.studentEmail = req.user.email;
+        }
 
-    // Check tutor exists
-    const tutor = await tutorCollection.findOne({_id: new ObjectId(bookingData.tutorId),});
+        if (!req.body.studentName) {
+          req.body.studentName = req.user.name;
+        }
 
-    if (!tutor) {
-      return res.status(404).json({ message: "Tutor not found." });
-    }
+        const bookingData = {
+          tutorId: req.body.tutorId,
+          tutorName: req.body.tutorName || "Unknown Tutor",
+          studentEmail: req.body.studentEmail || req.user.email,
+          studentName: req.body.studentName || req.user.name,
+          studentId: req.user.id,
+          phone: req.body.phone || "",
+          bookStatus: "confirmed",
+          createdAt: new Date(),
+        };
+        const tutor = await tutorCollection.findOne({
+          _id: new ObjectId(bookingData.tutorId),
+        });
 
-    if (tutor.totalSlot <= 0) {
-      return res.status(400).json({ message: "No available slots left." });
-    }
-    const result = await bookingCollection.insertOne(bookingData);
-    await tutorCollection.updateOne(
-      { _id: new ObjectId(bookingData.tutorId) },
-      { $inc: { totalSlot: -1 } }
-    );
+        if (!tutor) {
+          return res.status(404).json({ message: "Tutor not found." });
+        }
 
-    res.status(201).json({ 
-      success: true, 
-      message: "Booking successful!",
-      bookingId: result.insertedId 
+        if (tutor.totalSlot <= 0) {
+          return res.status(400).json({ message: "No available slots left." });
+        }
+        const result = await bookingCollection.insertOne(bookingData);
+        await tutorCollection.updateOne(
+          { _id: new ObjectId(bookingData.tutorId) },
+          { $inc: { totalSlot: -1 } },
+        );
+
+        res.status(201).json({
+          success: true,
+          message: "Booking successful!",
+          bookingId: result.insertedId,
+        });
+      } catch (error) {
+        res.status(500).json({
+          error: "Failed to book session.",
+          details: error.message,
+        });
+      }
     });
-
-  } catch (error) {
-    res.status(500).json({ 
-      error: "Failed to book session.",
-      details: error.message 
-    });
-  }
-});
 
     app.post("/tutor", authenticateJWT, async (req, res) => {
       try {
@@ -454,7 +466,9 @@ app.post("/book-session", authenticateJWT, async (req, res) => {
         if (!ObjectId.isValid(id)) {
           return res.status(400).json({ error: "Invalid tutor ID." });
         }
-        const result = await tutorCollection.deleteOne({ _id: new ObjectId(id) });
+        const result = await tutorCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
         if (result.deletedCount === 0) {
           return res.status(404).json({ error: "Tutor not found." });
         }
@@ -471,7 +485,9 @@ app.post("/book-session", authenticateJWT, async (req, res) => {
           return res.status(400).json({ error: "Invalid booking ID." });
         }
 
-        const booking = await bookingCollection.findOne({ _id: new ObjectId(id) });
+        const booking = await bookingCollection.findOne({
+          _id: new ObjectId(id),
+        });
         if (!booking) {
           return res.status(404).json({ message: "Booking not found." });
         }
@@ -481,11 +497,11 @@ app.post("/book-session", authenticateJWT, async (req, res) => {
 
         await bookingCollection.updateOne(
           { _id: new ObjectId(id) },
-          { $set: { bookStatus: "cancelled" } }
+          { $set: { bookStatus: "cancelled" } },
         );
         await tutorCollection.updateOne(
           { _id: new ObjectId(booking.tutorId) },
-          { $inc: { totalSlot: 1 } }
+          { $inc: { totalSlot: 1 } },
         );
 
         res.json({ success: true, message: "Booking cancelled" });
@@ -503,7 +519,7 @@ app.post("/book-session", authenticateJWT, async (req, res) => {
         }
         const result = await tutorCollection.updateOne(
           { _id: new ObjectId(id) },
-          { $set: req.body }
+          { $set: req.body },
         );
         if (result.matchedCount === 0) {
           return res.status(404).json({ error: "Tutor not found." });
@@ -514,20 +530,21 @@ app.post("/book-session", authenticateJWT, async (req, res) => {
       }
     });
 
-   await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!",
     );
+
+    app.get("/", (req, res) => {
+      res.send("Server is running fine!");
+    });
+
+    app.listen(PORT, () => {
+      console.log(`Server is running on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error("Run error:", error);
   } finally {
     // await client.close();
   }
 }
 run().catch(console.dir);
-
-app.get("/", (req, res) => {
-  res.send("Server is running fine!");
-});
-
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
